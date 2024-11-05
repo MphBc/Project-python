@@ -1,0 +1,95 @@
+import qrcode
+import pandas as pd
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+from google.colab import files, drive
+import requests
+import matplotlib.font_manager as fm
+import matplotlib
+
+# Step 1: Mount Google Drive
+drive.mount('/content/drive')
+
+# Define paths
+font_path = 'Sarabun-Regular.ttf'
+
+# Download the font if it doesn't exist
+if not Path(font_path).exists():
+    url = 'https://github.com/google/fonts/raw/main/ofl/sarabun/Sarabun-Regular.ttf'
+    response = requests.get(url)
+    with open(font_path, 'wb') as f:
+        f.write(response.content)
+
+# Load the font into matplotlib if not already loaded
+if 'Sarabun' not in [f.name for f in fm.fontManager.ttflist]:
+    fm.fontManager.addfont(font_path)
+matplotlib.rc('font', family='Sarabun')
+
+# Load the Excel data
+def load_data_from_excel(file_path, sheet_name="data"):
+    return pd.read_excel(file_path, sheet_name=sheet_name)[['ลำดับ', 'Link', 'concat']]
+
+# Generate and place QR code and text on the base image
+def generate_and_place_qr_on_image(data_df, base_image_path, font_path, output_folder="output_images", 
+                                   qr_position=(1140, 330), text_position=(10, 10), 
+                                   qr_size=375, font_size=36):
+    output_folder_path = Path(output_folder)
+    output_folder_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        custom_font = ImageFont.truetype(font_path, font_size)
+    except:
+        print(f"Warning: Could not load font from {font_path}. Using default font.")
+        custom_font = ImageFont.load_default()
+
+    for index, row in data_df.iterrows():
+        data = row['Link']
+        no = row['ลำดับ']
+        concat_part = row['concat']
+
+        # Generate QR code
+        qr = qrcode.QRCode(version=1, box_size=10)
+        qr.add_data(data)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill="black", back_color="white").resize((qr_size, qr_size))
+
+        # Open base image and place QR code
+        base_image = Image.open(base_image_path)
+        base_image.paste(qr_img, qr_position)
+
+        # Add centered text to the image
+        draw = ImageDraw.Draw(base_image)
+        text_bbox = draw.textbbox((0, 0), concat_part, font=custom_font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        image_width, image_height = base_image.size
+
+        # Calculate vertical and horizontal positions
+        vertical_offset = 775  # Adjust this value to move text up (smaller) or down (larger)
+        horizontal_offset = 250  # Increase this value to move text more to the right
+        centered_position = ((image_width - text_width) // 2 + horizontal_offset, vertical_offset)
+
+        # Draw the text at the new position
+        draw.text(centered_position, concat_part, font=custom_font, fill="black")
+        
+        # Draw the text
+        draw.text(centered_position, concat_part, font=custom_font, fill=(0, 0, 0))
+
+        # Create output filename
+        output_image_path = output_folder_path / f"{concat_part}_{no}.png"
+
+        # Save the image
+        base_image.save(output_image_path)
+        print(f"QR code and text placed on image and saved as: {output_image_path}")
+
+# Main execution
+file_path = '/content/หน่วยงาน.xlsx'
+base_image_path = '/content/scan QRน้ำ.jpg'
+output_drive_folder = '/content/drive/MyDrive/image_water'
+
+# Create the output folder in Google Drive if it doesn't exist
+Path(output_drive_folder).mkdir(parents=True, exist_ok=True)
+
+# Generate QR codes and save images in Google Drive
+data_df = load_data_from_excel(file_path)
+generate_and_place_qr_on_image(data_df, base_image_path, font_path, output_folder=output_drive_folder)
