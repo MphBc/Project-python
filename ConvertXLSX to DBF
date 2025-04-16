@@ -61,6 +61,24 @@ def to_date(val):
         return val
     return None
 
+def to_hhmm(val):
+    if pd.isna(val) or str(val).strip() == '':
+        return '0000'
+    try:
+        if isinstance(val, datetime.time):
+            return val.strftime('%H%M')
+        elif isinstance(val, datetime.datetime):
+            return val.strftime('%H%M')
+        elif isinstance(val, str):
+            # Try parsing from string
+            parsed = pd.to_datetime(val).time()
+            return parsed.strftime('%H%M')
+        else:
+            return '0000'
+    except:
+        return '0000'
+
+
 # Write data to DBF
 for i, row in df.iterrows():
     try:
@@ -68,9 +86,9 @@ for i, row in df.iterrows():
             to_date(row['DOB']),
             to_str(row['Sex'], 1, 'U'),
             to_date(row['DateAdm']),
-            to_str(row['TimeAdm'], 4, '0000'),
+            to_hhmm(row['TimeAdm']),
             to_date(row['DateDsc']),
-            to_str(row['TimeDsc'], 4, '0000'),
+            to_hhmm(row['TimeDsc']),
             to_str(row['Discht'], 1, 'U'),
             to_num(row['AdmWt'], 0.0),
             to_str(row['Age'], 3, '000'),
@@ -97,6 +115,7 @@ for i, row in df.iterrows():
             to_num(row['WtLOS'], 0.0),
             to_num(row['OT'], 0, is_int=True),
             to_num(row['AdjRW'], 0.0)
+
         ))
     except Exception as e:
         print(f"❌ Error on row {i}: {e}")
