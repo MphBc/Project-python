@@ -67,7 +67,7 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(override=True)
 
-    webhook_url = os.getenv("MS_TEAMS_WEBHOOK", "https://prod-18.southeastasia.logic.azure.com:443/workflows/1be203ef9f224c0cb6aace3251a8191f/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=DIzrNclTL_u1d8zm9vEgvDQzkMjFON_XbrFVuaNNmG4")
+    webhook_url = os.getenv("MS_TEAMS_WEBHOOK", "YOU_MS_TEAMS_WEBHOOK_HERE")
     print(f"Webhook URL: {webhook_url}")
     body = os.getenv("SAMPLE_MESSAGE_BODY", "Sample message body")
     adaptive_card = create_adaptive_card(message_body=body)
