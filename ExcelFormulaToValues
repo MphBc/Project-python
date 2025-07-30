@@ -1,0 +1,122 @@
+import os
+from openpyxl import load_workbook
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
+
+def process_single_file(file_path, thread_id=None):
+    """Process a single Excel file to convert formulas to values"""
+    prefix = f"[Thread {thread_id}] " if thread_id else ""
+    print(f"{prefix}Starting: {os.path.basename(file_path)}")
+    
+    try:
+        print(f"{prefix}Loading cached workbook...")
+        # Load workbook once with data_only=True to get cached values
+        cached_wb = load_workbook(file_path, data_only=True)
+        
+        print(f"{prefix}Loading main workbook...")
+        # Load workbook without data_only to modify formulas
+        wb = load_workbook(file_path, data_only=False)
+        
+        # Track if any changes were made
+        changes_made = False
+        total_formulas = 0
+        
+        print(f"{prefix}Scanning worksheets for formulas...")
+        for sheet_num, ws in enumerate(wb.worksheets, 1):
+            print(f"{prefix}Processing sheet {sheet_num}/{len(wb.worksheets)}: '{ws.title}'")
+            ws_cached = cached_wb[ws.title]
+            
+            # Get all formula cells at once
+            formula_cells = []
+            print(f"{prefix}Scanning cells in sheet '{ws.title}'...")
+            for row_num, row in enumerate(ws.iter_rows(), 1):
+                if row_num % 100 == 0:  # Progress every 100 rows
+                    print(f"{prefix}Scanned {row_num} rows in sheet '{ws.title}'")
+                for cell in row:
+                    if cell.data_type == 'f':  # Formula cell
+                        formula_cells.append(cell)
+            
+            total_formulas += len(formula_cells)
+            if formula_cells:
+                print(f"{prefix}Found {len(formula_cells)} formulas in sheet '{ws.title}', converting...")
+                
+                # Process formula cells in batches
+                for i, cell in enumerate(formula_cells, 1):
+                    if i % 50 == 0:  # Progress every 50 formulas
+                        print(f"{prefix}Converted {i}/{len(formula_cells)} formulas in sheet '{ws.title}'")
+                    try:
+                        cached_value = ws_cached[cell.coordinate].value
+                        cell.value = cached_value
+                        cell.data_type = 'n' if isinstance(cached_value, (int, float)) else 's'
+                        changes_made = True
+                    except Exception as e:
+                        print(f"{prefix}Warning: Could not process cell {cell.coordinate} in sheet '{ws.title}': {e}")
+            else:
+                print(f"{prefix}No formulas found in sheet '{ws.title}'")
+        
+        # Only save if changes were made
+        if changes_made:
+            print(f"{prefix}Saving changes to file... ({total_formulas} formulas converted)")
+            wb.save(file_path)
+            print(f"{prefix}✓ Completed: {os.path.basename(file_path)} ({total_formulas} formulas converted)")
+        else:
+            print(f"{prefix}○ No formulas found in: {os.path.basename(file_path)}")
+            
+    except Exception as e:
+        print(f"{prefix}✗ Error processing {os.path.basename(file_path)}: {e}")
+    finally:
+        # Ensure workbooks are closed
+        try:
+            print(f"{prefix}Closing workbooks...")
+            wb.close()
+            cached_wb.close()
+        except:
+            pass
+
+def convert_formulas_to_values(folder_path, max_workers=4):
+    """
+    Convert all formulas to values in Excel files within a folder
+    
+    Args:
+        folder_path: Path to folder containing Excel files
+        max_workers: Number of threads to use for parallel processing
+    """
+    # Get all Excel files
+    excel_files = []
+    for filename in os.listdir(folder_path):
+        if filename.endswith((".xlsx", ".xlsm")):
+            file_path = os.path.join(folder_path, filename)
+            excel_files.append(file_path)
+    
+    if not excel_files:
+        print("No Excel files found in the specified folder.")
+        return
+    
+    print(f"Found {len(excel_files)} Excel files to process")
+    
+    # Process files in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_file = {executor.submit(process_single_file, file_path): file_path 
+                         for file_path in excel_files}
+        
+        # Process completed tasks
+        completed = 0
+        for future in as_completed(future_to_file):
+            completed += 1
+            file_path = future_to_file[future]
+            try:
+                future.result()  # Get result or raise exception
+                print(f"Progress: {completed}/{len(excel_files)} files completed")
+            except Exception as e:
+                print(f"Error with {file_path}: {e}")
+
+# Usage
+if __name__ == "__main__":
+    folder_path = r"your_path_here"
+    
+    # Adjust max_workers based on your system (typically 2-8 works well)
+    convert_formulas_to_values(folder_path, max_workers=4)
+    
+    print("Done pasting values into all Excel files.")
