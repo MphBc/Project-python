@@ -1,0 +1,36 @@
+# Example: all Excel files in a folder
+file_paths = glob.glob("*.xlsx")   # or give full path like "reports/*.xlsx"
+
+all_data = []
+
+import pandas as pd
+import glob
+
+for file_path in file_paths:
+    # Get all sheet names in current file
+    sheet_names = pd.ExcelFile(file_path).sheet_names
+    
+    for sheet in sheet_names:
+        # Read each sheet
+        df = pd.read_excel(file_path, sheet_name=sheet)
+        
+        # Drop first 5 rows
+        df = df.iloc[5:]
+        
+        # Set header row
+        df.columns = df.iloc[0]
+        df = df[1:]
+        
+        # Add metadata (optional but useful)
+        df["FileName"] = file_path
+        df["SheetName"] = sheet
+        
+        # Append to list
+        all_data.append(df)
+        print(f'processing file : {file_path} and sheet : {sheet}')
+
+# Combine all files + sheets
+final_df = pd.concat(all_data, ignore_index=True)
+print("complete combine file")
+
+final_df
