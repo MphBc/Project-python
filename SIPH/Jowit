@@ -1,0 +1,164 @@
+import pandas as pd
+import glob
+from datetime import datetime, timedelta, time
+import matplotlib.pyplot as plt
+
+# Example: all Excel files in a folder
+file_paths = glob.glob("*.xlsx")   # or give full path like "reports/*.xlsx"
+
+all_data = []
+
+for file_path in file_paths:
+    # Get all sheet names in current file
+    sheet_names = pd.ExcelFile(file_path).sheet_names
+    
+    for sheet in sheet_names:
+        # Read each sheet
+        df = pd.read_excel(file_path, sheet_name=sheet)
+        
+        # Drop first 5 rows
+        df = df.iloc[5:]
+        
+        # Set header row
+        df.columns = df.iloc[0]
+        df = df[1:]
+        
+        # Add metadata (optional but useful)
+        df["FileName"] = file_path
+        df["SheetName"] = sheet
+        
+        # Append to list
+        all_data.append(df)
+        print(f'processing file : {file_path} and sheet : {sheet}')
+
+# Combine all files + sheets
+final_df = pd.concat(all_data, ignore_index=True)
+print("complete combine file")
+
+final_df
+
+# Define conditions to drop rows
+List_drop = (final_df['Card Type'] == 'Museum') | (final_df['Card Type'] == 'User')
+
+inx_drop = final_df[List_drop].index
+
+# Drop these rows using the drop() method
+df_filter = final_df.drop(inx_drop)
+
+# Select Columns
+df_filter_2 = df_filter[['In Access Date/Time', 'Out Access Date/Time', 'Park Time', 'Card No.', 'License No.', 'Card Type']]
+
+# Drop rows NA
+df_filter_2 = df_filter_2.dropna(axis=0)
+
+# To DateTime
+df_filter_2['In Access Date/Time'] = pd.to_datetime(df_filter_2['In Access Date/Time'])
+df_filter_2['Out Access Date/Time'] = pd.to_datetime(df_filter_2['Out Access Date/Time'])
+
+# Dictionaries for mapping to Thai names
+thai_months = {
+    1: 'มกราคม', 2: 'กุมภาพันธ์', 3: 'มีนาคม', 4: 'เมษายน',
+    5: 'พฤษภาคม', 6: 'มิถุนายน', 7: 'กรกฎาคม', 8: 'สิงหาคม',
+    9: 'กันยายน', 10: 'ตุลาคม', 11: 'พฤศจิกายน', 12: 'ธันวาคม'
+}
+
+# Weekday mapping where 0=Monday and 6=Sunday
+thai_days = {
+    0: 'จันทร์', 1: 'อังคาร', 2: 'พุธ', 3: 'พฤหัสบดี',
+    4: 'ศุกร์', 5: 'เสาร์', 6: 'อาทิตย์'
+}
+
+
+# Split the datetime column and create new columns
+df_filter_2['Year'] = df_filter_2['In Access Date/Time'].dt.year
+df_filter_2['Month'] = df_filter_2['In Access Date/Time'].dt.month
+df_filter_2['Month_th'] = df_filter_2['In Access Date/Time'].dt.month.map(thai_months)
+df_filter_2['Day'] = df_filter_2['In Access Date/Time'].dt.weekday.map(thai_days)
+df_filter_2['Hours'] = df_filter_2['In Access Date/Time'].dt.hour
+df_filter_2['Time_in'] = df_filter_2['In Access Date/Time'].dt.strftime('%H:%M:%S')
+df_filter_2['Hours_out'] = df_filter_2['Out Access Date/Time'].dt.hour
+
+df_filter_2['Count'] = 1
+
+# Change Format Date
+df_filter_2['NewDate'] = df_filter_2['In Access Date/Time'].dt.strftime("%d-%m-%Y")
+
+# Merge Holiday
+df_merge_holiday = pd.merge(df_filter_2,df_holiday, left_on='NewDate', right_on='text', how='left')
+
+# Replacing วันหยุด
+df_merge_holiday.loc[df_merge_holiday['วัน'] == 'วันหยุด', 'Day'] = 'วันหยุด'
+
+# Cleaning Year are not in 2024 and 2025
+List_year = [2022,2023]
+
+df_merge_holiday = df_merge_holiday[~df_merge_holiday['Year'].isin(List_year)]
+
+# Sort by 'Name' in ascending order, then by 'Age' in descending order
+df_merge_holiday = df_merge_holiday.sort_values(by=['Year', 'Month'], ascending=[True, True])
+
+# Drop out off Condition
+df_merge_holiday = df_merge_holiday.drop(df_merge_holiday[(df_merge_holiday["Year"] == 2024) & (df_merge_holiday["Month"] < 10)].index)
+
+# Drop Aug in 2025
+df_merge_holiday = df_merge_holiday.drop(df_merge_holiday[(df_merge_holiday["Year"] == 2025) & (df_merge_holiday["Month"] == 9)].index)
+
+
+# Function to classify time
+def classify_time(dt):
+    t = dt.time()
+    if time(5, 0) <= t < time(12, 0):
+        return "เช้า"
+    elif time(12, 0) <= t < time(16, 0):
+        return "บ่าย"
+    else:
+        return "กลางคืน"
+
+# Apply function to column
+df_merge_holiday["ช่วงเวลา"] = df_merge_holiday["In Access Date/Time"].apply(classify_time)
+
+# Time diff
+df_merge_holiday['time_diff'] = df_merge_holiday['Out Access Date/Time'] - df_merge_holiday['In Access Date/Time']
+# Turn day to hour
+df_merge_holiday['time_diff_hour'] = df_merge_holiday['time_diff'].dt.total_seconds() / 3600
+
+# ---------------------------------------------------------------------------------------------------
+
+# ดึง "วัน" ออกมา
+dates = pd.concat([
+    df_merge_holiday["In Access Date/Time"].dt.date,
+    df_merge_holiday["Out Access Date/Time"].dt.date
+]).unique()
+
+
+results = []
+
+# วนทีละวัน
+for d in sorted(dates):
+    for hour in range(24):
+        start = pd.Timestamp(f"{d} {hour:02d}:00")
+        end = start + pd.Timedelta(hours=1)
+
+        # รถที่เข้าในช่วงชั่วโมงนี้
+        cars_in = ((df_merge_holiday["In Access Date/Time"] >= start) & (df_merge_holiday["In Access Date/Time"] < end)).sum()
+
+        # รถที่ออกในช่วงชั่วโมงนี้
+        cars_out = ((df_merge_holiday["Out Access Date/Time"] >= start) & (df_merge_holiday["Out Access Date/Time"] < end)).sum()
+
+        # รถที่ยังอยู่ในลาน ณ ต้นชั่วโมงนี้
+        cars_inside = ((df_merge_holiday["In Access Date/Time"] <= start) & (df_merge_holiday["Out Access Date/Time"] > start)).sum()
+
+        results.append({
+            "date": d,
+            "hour": hour,
+            "cars_in": cars_in,
+            "cars_out": cars_out,
+            "cars_inside": cars_inside
+        })
+
+# รวมผลลัพธ์
+result_df = pd.DataFrame(results)
+
+print(result_df)
+
+
