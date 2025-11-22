@@ -1,0 +1,48 @@
+import zipfile
+import os
+import shutil
+import glob
+
+def extract_and_combine_multiple(zip_folder, extract_base, combined_folder):
+    os.makedirs(extract_base, exist_ok=True)
+    os.makedirs(combined_folder, exist_ok=True)
+
+    # 🔍 Find all zip files in the folder
+    zip_files = glob.glob(os.path.join(zip_folder, "*.zip"))
+
+    print(f"🔎 Found {len(zip_files)} ZIP files in: {os.path.abspath(zip_folder)}\n")
+
+    for zip_file in zip_files:
+        zip_name = os.path.splitext(os.path.basename(zip_file))[0]
+        extract_to = os.path.join(extract_base, zip_name)
+
+        # 📦 Step 1: Extract ZIP file
+        with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+            zip_ref.extractall(extract_to)
+        print(f"📂 Extracted {zip_file} → {os.path.abspath(extract_to)}\n")
+
+        # 🚚 Step 2: Move files to combined folder
+        for root, dirs, files in os.walk(extract_to):
+            for file in files:
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(combined_folder, file)
+
+                # 🔁 Handle duplicate filenames
+                base, ext = os.path.splitext(dst_file)
+                counter = 1
+                while os.path.exists(dst_file):
+                    dst_file = f"{base}_{counter}{ext}"
+                    counter += 1
+
+                print(f"Moving from: {os.path.abspath(src_file)}")
+                print(f"          to: {os.path.abspath(dst_file)}\n")
+                shutil.move(src_file, dst_file)
+
+    print(f"🎉 All files combined in: {os.path.abspath(combined_folder)}")
+
+# 🛠 Use your paths
+zip_folder = r"C:\Users\HP\Downloads\allzip"         # Folder containing multiple ZIP files
+extract_base = r"C:\Users\HP\Downloads\allzip\temp"  # Temporary folder for extraction
+combined_folder = r"C:\image"  # Final destination
+
+extract_and_combine_multiple(zip_folder, extract_base, combined_folder)
